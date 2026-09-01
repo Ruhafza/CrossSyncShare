@@ -1,0 +1,32 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Room marker doc — just a timestamp, written once when a room is created.
+    match /rooms/{roomId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Shared items inside a room. Anyone who is signed in (anonymously) and
+    // knows the room code can read, post, and delete items in that room.
+    match /rooms/{roomId}/items/{itemId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null
+        && request.resource.data.type in ['text', 'snippet', 'image', 'file']
+        && request.resource.data.createdBy == request.auth.uid
+        && (
+          (request.resource.data.type in ['text', 'snippet']
+            && request.resource.data.content is string
+            && request.resource.data.content.size() < 20000)
+          ||
+          (request.resource.data.type in ['image', 'file']
+            && request.resource.data.fileUrl is string)
+        );
+
+      allow delete: if request.auth != null;
+      allow update: if false; // items are immutable — delete and re-post instead
+    }
+  }
+}

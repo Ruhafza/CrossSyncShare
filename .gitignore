@@ -1,0 +1,6 @@
+js/firebase-config.js
+js/supabase-config.js
+.env
+.netlify/
+node_modules/
+.DS_Store
