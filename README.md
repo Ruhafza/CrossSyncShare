@@ -31,7 +31,7 @@ You do **not** need to touch Firebase's Storage section at all — that's Supaba
 
 1. Go to [supabase.com](https://supabase.com/) → **New project** (free tier, no card).
 2. Once it's provisioned: **Storage** → **New bucket** → name it exactly `netsync-files` → toggle **Public bucket** on → Create.
-3. **Project Settings → Data API** (sometimes labeled "API") → copy the **Project URL** and the **anon / public** key. (Not the `service_role` key — that one's secret and shouldn't go in a browser app.)
+3. **Project Settings → API Keys** → copy the **Project URL**, and either the **anon** key (legacy, long JWT string) or the **publishable** key (newer, starts `sb_publishable_`) — whichever your dashboard shows. They're functionally identical (same low privilege, same RLS enforcement); Supabase is phasing out the legacy anon/service_role pair by the end of 2026 in favor of publishable/secret, so prefer publishable if it's offered. Either way, do **not** copy the secret / `service_role` key — that one bypasses Row Level Security entirely and must never go in a browser app.
 
 ## 4. Configure it — without committing your keys to git
 
