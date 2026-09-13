@@ -3,7 +3,7 @@ import {
   getAuth, signInAnonymously, onAuthStateChanged
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-auth.js";
 import {
-  getFirestore, collection, addDoc, deleteDoc, doc, onSnapshot,
+  getFirestore, collection, addDoc, deleteDoc, doc, getDoc, onSnapshot,
   query, orderBy, limit, serverTimestamp, Timestamp, setDoc
 } from "https://www.gstatic.com/firebasejs/12.18.0/firebase-firestore.js";
 
@@ -135,12 +135,11 @@ function showRoom() {
 }
 
 /* ===================== Room lifecycle ===================== */
-async function enterRoom(code) {
+// Enters a room's UI directly — no existence check. Only call this once
+// you've already confirmed the room exists (joinRoom does that check) or
+// you just created it yourself (createRoom does).
+function enterRoom(code) {
   code = code.toUpperCase();
-  if (!isValidRoomCode(code)) {
-    toast("Room codes are 4–10 letters/numbers.", true);
-    return;
-  }
   currentRoomId = code;
   roomCodeDisplay.textContent = code;
 
@@ -151,6 +150,30 @@ async function enterRoom(code) {
 
   showRoom();
   attachFeedListener(code);
+}
+
+// Used for manual "Join" codes and ?room= links — anything where we don't
+// already know the room is real. Without this check, typing any
+// well-formed code (right length/characters) would silently drop you into
+// an empty room that looks legitimate, even though nobody ever created it.
+async function joinRoom(code) {
+  code = code.trim().toUpperCase();
+  if (!isValidRoomCode(code)) {
+    toast("Room codes are 4–10 letters/numbers.", true);
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(db, "rooms", code));
+    if (!snap.exists()) {
+      toast(`Room ${code} doesn't exist. Check the code, or start a new one.`, true);
+      return;
+    }
+  } catch (e) {
+    console.error(e);
+    toast("Couldn't check that room. Check your Firebase setup.", true);
+    return;
+  }
+  enterRoom(code);
 }
 
 function leaveRoom() {
@@ -169,11 +192,16 @@ async function createRoom() {
   try {
     await setDoc(doc(db, "rooms", code), { createdAt: serverTimestamp() });
   } catch (e) {
-    // Non-fatal — the room still works as a pure namespace even if this write fails.
-    console.warn("Could not write room marker doc:", e);
+    // Now that joinRoom requires this marker doc to exist, a failed write
+    // here would create a room nobody else could ever join — so this
+    // needs to be fatal, not a warn-and-continue like before.
+    console.error("Could not create room:", e);
+    toast("Couldn't create the room. Check your Firebase setup.", true);
+    return;
   }
   enterRoom(code);
 }
+
 
 /* ===================== Feed rendering ===================== */
 function attachFeedListener(roomId) {
@@ -185,7 +213,7 @@ function attachFeedListener(roomId) {
     limit(MAX_FEED_ITEMS)
   );
 
-    unsubscribeFeed = onSnapshot(q, (snap) => {
+  unsubscribeFeed = onSnapshot(q, (snap) => {
     const liveDocs = sweepExpiredItems(snap.docs);
     renderFeed(liveDocs);
     pulseDot.classList.remove("is-pulsing");
@@ -197,6 +225,18 @@ function attachFeedListener(roomId) {
   });
 }
 
+// The Firestore TTL policy (if you've set one up) only ever deletes the
+// Firestore *document* — it has no reach into Supabase Storage, so a file
+// left behind there would never get cleaned up on its own. This runs
+// whenever anyone has the room open: any item already past its expiresAt
+// gets deleted from both Firestore and Supabase right away, instead of
+// waiting on (and only half-trusting) Firestore's background sweep.
+//
+// Caveat: this only runs while someone is connected to the room. A room
+// nobody ever revisits after it expires will still accumulate orphaned
+// files in Supabase — Firestore's TTL cleans up its own side regardless of
+// visits, but there's no equivalent for Supabase without a scheduled
+// server-side job, which is a step beyond this app's zero-backend design.
 function sweepExpiredItems(docs) {
   const now = Date.now();
   const live = [];
@@ -471,7 +511,7 @@ createRoomBtn.addEventListener("click", createRoom);
 joinRoomForm.addEventListener("submit", (e) => {
   e.preventDefault();
   const code = joinRoomInput.value.trim();
-  if (code) enterRoom(code);
+  if (code) joinRoom(code);
 });
 
 copyCodeBtn.addEventListener("click", () => {
@@ -484,13 +524,16 @@ leaveRoomBtn.addEventListener("click", leaveRoom);
 
 /* ===================== Boot ===================== */
 function boot() {
+  const yearEl = document.getElementById("copyrightYear");
+  if (yearEl) yearEl.textContent = new Date().getFullYear();
+
   const lastRoom = localStorage.getItem("netsync:lastRoom");
   if (lastRoom) joinRoomInput.value = lastRoom;
 
   const params = new URLSearchParams(window.location.search);
   const roomFromUrl = params.get("room");
   if (roomFromUrl && isValidRoomCode(roomFromUrl.toUpperCase())) {
-    enterRoom(roomFromUrl);
+    joinRoom(roomFromUrl);
   } else {
     showLanding();
   }
