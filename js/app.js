@@ -225,18 +225,6 @@ function attachFeedListener(roomId) {
   });
 }
 
-// The Firestore TTL policy (if you've set one up) only ever deletes the
-// Firestore *document* — it has no reach into Supabase Storage, so a file
-// left behind there would never get cleaned up on its own. This runs
-// whenever anyone has the room open: any item already past its expiresAt
-// gets deleted from both Firestore and Supabase right away, instead of
-// waiting on (and only half-trusting) Firestore's background sweep.
-//
-// Caveat: this only runs while someone is connected to the room. A room
-// nobody ever revisits after it expires will still accumulate orphaned
-// files in Supabase — Firestore's TTL cleans up its own side regardless of
-// visits, but there's no equivalent for Supabase without a scheduled
-// server-side job, which is a step beyond this app's zero-backend design.
 function sweepExpiredItems(docs) {
   const now = Date.now();
   const live = [];
