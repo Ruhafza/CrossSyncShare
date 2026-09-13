@@ -185,8 +185,9 @@ function attachFeedListener(roomId) {
     limit(MAX_FEED_ITEMS)
   );
 
-  unsubscribeFeed = onSnapshot(q, (snap) => {
-    renderFeed(snap.docs);
+    unsubscribeFeed = onSnapshot(q, (snap) => {
+    const liveDocs = sweepExpiredItems(snap.docs);
+    renderFeed(liveDocs);
     pulseDot.classList.remove("is-pulsing");
     void pulseDot.offsetWidth; // restart animation
     pulseDot.classList.add("is-pulsing");
@@ -194,6 +195,24 @@ function attachFeedListener(roomId) {
     console.error(err);
     toast("Lost connection to the room. Check your Firebase setup.", true);
   });
+}
+
+function sweepExpiredItems(docs) {
+  const now = Date.now();
+  const live = [];
+  for (const d of docs) {
+    const data = d.data();
+    const expiresAt = data.expiresAt?.toDate ? data.expiresAt.toDate() : null;
+    if (expiresAt && expiresAt.getTime() <= now) {
+      deleteDoc(doc(db, "rooms", currentRoomId, "items", d.id)).catch(() => {});
+      if (data.filePath) {
+        supabase.storage.from(SUPABASE_BUCKET).remove([data.filePath]).catch(() => {});
+      }
+      continue;
+    }
+    live.push(d);
+  }
+  return live;
 }
 
 function renderFeed(docs) {
